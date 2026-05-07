@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Secret Chat</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="auth-screen" id="authScreen">
+    <section class="auth-hero" aria-label="Welcome">
+      <div class="brand-row">
+        <div class="brand-mark" aria-hidden="true">P</div>
+        <div>
+          <h1>Secret Chat</h1>
+          <p>Text, photos, and voice messages for real people.</p>
+        </div>
+      </div>
+      <div class="hero-copy">
+        <p class="eyebrow">Private local chat</p>
+        <h2>Sign in before you enter the room.</h2>
+        <p>Your account is saved in the local database, then every message is attached to your username.</p>
+      </div>
+    </section>
+
+    <section class="auth-card" aria-label="Account forms">
+      <div class="theme-row">
+        <div>
+          <p class="eyebrow">Account</p>
+          <h2 id="authTitle">Create account</h2>
+        </div>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle dark mode">
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M12 3v2M12 19v2M5.6 5.6 7 7M17 17l1.4 1.4M3 12h2M19 12h2M5.6 18.4 7 17M17 7l1.4-1.4"/>
+            <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="auth-tabs" role="tablist" aria-label="Authentication mode">
+        <button class="auth-tab active" id="showSignup" type="button">Sign up</button>
+        <button class="auth-tab" id="showLogin" type="button">Log in</button>
+      </div>
+
+      <form class="auth-form" id="signupForm">
+        <label>
+          User name
+          <input id="signupUsername" type="text" minlength="3" maxlength="32" autocomplete="username" required>
+        </label>
+        <label>
+          Phone number
+          <input id="signupPhone" type="tel" autocomplete="tel" required>
+        </label>
+        <label>
+          Password
+          <span class="password-wrap">
+            <input id="signupPassword" type="password" minlength="6" autocomplete="new-password" required>
+            <button class="password-toggle" type="button" data-password-toggle="signupPassword" aria-label="Show password">
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/>
+                <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/>
+              </svg>
+            </button>
+          </span>
+        </label>
+        <button class="primary-button" type="submit">Create account</button>
+      </form>
+
+      <form class="auth-form hidden" id="loginForm">
+        <label>
+          Phone number
+          <input id="loginPhone" type="tel" autocomplete="tel" required>
+        </label>
+        <label>
+          Password
+          <span class="password-wrap">
+            <input id="loginPassword" type="password" autocomplete="current-password" required>
+            <button class="password-toggle" type="button" data-password-toggle="loginPassword" aria-label="Show password">
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/>
+                <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/>
+              </svg>
+            </button>
+          </span>
+        </label>
+        <button class="primary-button" type="submit">Log in</button>
+      </form>
+
+      <p class="form-message" id="authMessage" role="status"></p>
+    </section>
+  </main>
+
+  <main class="app-shell hidden" id="appShell">
+    <aside class="sidebar" aria-label="Conversations">
+      <div class="brand-row">
+        <div class="brand-mark" aria-hidden="true">P</div>
+        <div>
+          <h1>Secret Chat</h1>
+          <p>People-to-people chat</p>
+        </div>
+      </div>
+
+      <div class="profile-card">
+        <span class="avatar" id="userAvatar">U</span>
+        <div>
+          <strong id="currentUsername">User</strong>
+          <p id="currentPhone">Phone</p>
+        </div>
+      </div>
+
+      <button class="secondary-button" id="logoutButton" type="button">Log out</button>
+
+      <p class="room-note">Rooms</p>
+      <nav class="room-list" aria-label="Chat rooms">
+        <button class="room-button active" type="button">
+          General
+          <span>Live</span>
+        </button>
+      </nav>
+    </aside>
+
+    <section class="chat-panel" aria-label="Active conversation">
+      <header class="chat-header">
+        <button class="icon-button mobile-menu" id="mobileMenuButton" type="button" aria-label="Show chats">
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M4 7h16M4 12h16M4 17h16"/>
+          </svg>
+        </button>
+        <div>
+          <p class="eyebrow">General room</p>
+          <h2>Everyone can chat here</h2>
+        </div>
+        <button class="theme-toggle" id="appThemeToggle" type="button" aria-label="Toggle dark mode">
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.7 6.7 0 0 0 9.8 9.8Z"/>
+          </svg>
+        </button>
+        <div class="status-pill">
+          <span></span>
+          <strong id="connectionLabel">Connecting</strong>
+        </div>
+      </header>
+
+      <div class="message-feed" id="messageFeed" aria-live="polite"></div>
+
+      <form class="composer" id="messageForm">
+        <button class="icon-button" id="photoButton" type="button" aria-label="Send photo" title="Send photo">
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M14.5 4h-5L7.8 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.8L14.5 4Z"/>
+            <path d="M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/>
+          </svg>
+        </button>
+        <button class="icon-button" id="voiceButton" type="button" aria-label="Record voice message" title="Record voice message">
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/>
+          </svg>
+        </button>
+        <label class="message-input-wrap" for="messageInput">
+          <textarea id="messageInput" rows="1" placeholder="Write a message..." autocomplete="off"></textarea>
+        </label>
+        <button class="send-button" type="submit" aria-label="Send message">
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z"/>
+          </svg>
+        </button>
+        <input class="hidden" id="photoInput" type="file" accept="image/*">
+      </form>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
