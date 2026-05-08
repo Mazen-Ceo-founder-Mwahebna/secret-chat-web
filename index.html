@@ -10,7 +10,7 @@
   <main class="auth-screen" id="authScreen">
     <section class="auth-hero" aria-label="Welcome">
       <div class="brand-row">
-        <div class="brand-mark" aria-hidden="true">P</div>
+        <div class="brand-mark" aria-hidden="true">S</div>
         <div>
           <h1>Secret Chat</h1>
           <p>Text, photos, and voice messages for real people.</p>
@@ -93,7 +93,9 @@
   <main class="app-shell hidden" id="appShell">
     <aside class="sidebar" aria-label="Conversations">
       <div class="brand-row">
-        <div class="brand-mark" aria-hidden="true">P</div>
+        <button class="profile-open-button" id="profileOpenButton" type="button" aria-label="Open profile">
+          <span class="brand-mark" aria-hidden="true">S</span>
+        </button>
         <div>
           <h1>Secret Chat</h1>
           <p>People-to-people chat</p>
@@ -110,13 +112,18 @@
 
       <button class="secondary-button" id="logoutButton" type="button">Log out</button>
 
-      <p class="room-note">Rooms</p>
-      <nav class="room-list" aria-label="Chat rooms">
-        <button class="room-button active" type="button">
-          General
-          <span>Live</span>
-        </button>
-      </nav>
+      <label class="search-box" for="friendSearchInput">
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <path d="m21 21-4.3-4.3m1.3-5.2a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0Z"/>
+        </svg>
+        <input id="friendSearchInput" type="search" placeholder="Search username or phone">
+      </label>
+      <div class="search-results" id="searchResults"></div>
+
+      <p class="room-note">Chats</p>
+      <nav class="room-list" id="conversationList" aria-label="Chats"></nav>
+
+      <button class="new-group-button" id="newGroupButton" type="button" aria-label="Create group">+</button>
     </aside>
 
     <section class="chat-panel" aria-label="Active conversation">
@@ -127,8 +134,9 @@
           </svg>
         </button>
         <div>
-          <p class="eyebrow">General room</p>
-          <h2>Everyone can chat here</h2>
+          <p class="eyebrow" id="chatKind">Group</p>
+          <h2 id="chatTitle">General</h2>
+          <button class="members-button" id="membersButton" type="button">Show members</button>
         </div>
         <button class="theme-toggle" id="appThemeToggle" type="button" aria-label="Toggle dark mode">
           <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -168,6 +176,59 @@
       </form>
     </section>
   </main>
+
+  <section class="drawer hidden" id="membersDrawer" aria-label="Group members">
+    <div class="drawer-card">
+      <header>
+        <h2>Members</h2>
+        <button class="icon-button" id="closeMembersButton" type="button" aria-label="Close members">x</button>
+      </header>
+      <div class="member-list" id="memberList"></div>
+    </div>
+  </section>
+
+  <section class="drawer hidden" id="profileDrawer" aria-label="Edit profile">
+    <form class="drawer-card" id="profileForm">
+      <header>
+        <h2>Edit profile</h2>
+        <button class="icon-button" id="closeProfileButton" type="button" aria-label="Close profile">x</button>
+      </header>
+      <label>
+        Username
+        <input id="profileUsernameInput" type="text" minlength="3" maxlength="32" required>
+      </label>
+      <label>
+        Profile picture
+        <input id="profilePhotoInput" type="file" accept="image/*">
+      </label>
+      <div class="profile-preview" id="profilePreview"></div>
+      <button class="primary-button" type="submit">Save profile</button>
+    </form>
+  </section>
+
+  <section class="drawer hidden" id="groupDrawer" aria-label="Create group">
+    <form class="drawer-card" id="groupForm">
+      <header>
+        <h2>New group</h2>
+        <button class="icon-button" id="closeGroupButton" type="button" aria-label="Close group">x</button>
+      </header>
+      <label>
+        Group name
+        <input id="groupNameInput" type="text" maxlength="40" required>
+      </label>
+      <label>
+        Group picture
+        <input id="groupPhotoInput" type="file" accept="image/*">
+      </label>
+      <label>
+        Add people by username or phone
+        <input id="groupUserSearchInput" type="search" placeholder="Search people">
+      </label>
+      <div class="search-results" id="groupUserResults"></div>
+      <div class="selected-members" id="selectedMembers"></div>
+      <button class="primary-button" type="submit">Create group</button>
+    </form>
+  </section>
 
   <script src="app.js"></script>
 </body>
