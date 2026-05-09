@@ -54,6 +54,18 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, groupConversation(user, await readJsonBody(req)), 201);
     }
 
+    const conversationMatch = url.pathname.match(/^\/api\/conversations\/([^/]+)$/);
+    if (req.method === "PATCH" && conversationMatch) {
+      const user = requireUser(req);
+      return sendJson(res, updateGroup(conversationMatch[1], user, await readJsonBody(req)));
+    }
+
+    const memberMatch = url.pathname.match(/^\/api\/conversations\/([^/]+)\/members\/([^/]+)$/);
+    if (req.method === "DELETE" && memberMatch) {
+      const user = requireUser(req);
+      return sendJson(res, removeGroupMember(memberMatch[1], memberMatch[2], user));
+    }
+
     if (req.method === "GET" && url.pathname === "/api/messages") {
       const user = requireUser(req);
       const conversationId = url.searchParams.get("conversationId") || GENERAL_ID;
@@ -255,6 +267,33 @@ function groupConversation(user, body) {
   return serializeConversation(db, conversation);
 }
 
+function updateGroup(conversationId, user, body) {
+  const db = readDb();
+  const conversation = groupForAdmin(db, conversationId, user);
+  const name = cleanText(body.name, 40);
+  const photo = typeof body.photo === "string" && body.photo.startsWith("data:image/") ? body.photo : "";
+
+  if (!name) throw badRequest("Group name is required.");
+  conversation.name = name;
+  if (photo || body.photo === "") conversation.photo = photo;
+  conversation.updatedAt = Date.now();
+
+  writeDb(db);
+  broadcast({ type: "conversations:update" });
+  return serializeConversation(db, conversation);
+}
+
+function removeGroupMember(conversationId, memberId, user) {
+  const db = readDb();
+  const conversation = groupForAdmin(db, conversationId, user);
+  if (memberId === user.id) throw badRequest("The admin cannot remove themself.");
+  conversation.memberIds = conversation.memberIds.filter((id) => id !== memberId);
+  conversation.updatedAt = Date.now();
+  writeDb(db);
+  broadcast({ type: "conversations:update" });
+  return serializeConversation(db, conversation);
+}
+
 function createMessage(body, user) {
   const conversationId = cleanText(body.conversationId, 80) || GENERAL_ID;
   const type = ["text", "photo", "voice"].includes(body.type) ? body.type : "text";
@@ -262,6 +301,12 @@ function createMessage(body, user) {
   const dataUrl = typeof body.dataUrl === "string" ? body.dataUrl : "";
   const mimeType = typeof body.mimeType === "string" ? body.mimeType.slice(0, 80) : "";
   const fileName = cleanText(body.fileName, 120);
+  const replyTo = body.replyTo && typeof body.replyTo === "object" ? {
+    id: cleanText(body.replyTo.id, 80),
+    sender: cleanText(body.replyTo.sender, 32),
+    text: cleanText(body.replyTo.text, 180),
+    type: cleanText(body.replyTo.type, 20)
+  } : null;
 
   if (type === "text" && !text) throw badRequest("Text messages cannot be empty.");
   if ((type === "photo" || type === "voice") && !dataUrl.startsWith("data:")) throw badRequest("Media messages need a valid data URL.");
@@ -278,6 +323,7 @@ function createMessage(body, user) {
     dataUrl,
     mimeType,
     fileName,
+    replyTo,
     reactions: [],
     seenBy: [seenUser(user)],
     createdAt: Date.now()
@@ -324,6 +370,13 @@ function ensureConversationAccess(db, conversationId, user) {
   if (!conversation) throw badRequest("Conversation was not found.");
   if (conversation.type === "private" && !conversation.memberIds.includes(user.id)) throw unauthorized("You are not in this chat.");
   if (conversation.type === "group" && conversation.id !== GENERAL_ID && !conversation.memberIds.includes(user.id)) throw unauthorized("You are not in this group.");
+}
+
+function groupForAdmin(db, conversationId, user) {
+  const conversation = db.conversations.find((item) => item.id === conversationId);
+  if (!conversation || conversation.type !== "group" || conversation.id === GENERAL_ID) throw badRequest("Group was not found.");
+  if (conversation.createdBy !== user.id) throw unauthorized("Only the group admin can do that.");
+  return conversation;
 }
 
 function markMessagesSeen(messages, user) {

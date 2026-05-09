@@ -27,6 +27,7 @@ const conversationList = $("#conversationList");
 const friendSearchInput = $("#friendSearchInput");
 const searchResults = $("#searchResults");
 const chatTitle = $("#chatTitle");
+const chatTitleButton = $("#chatTitleButton");
 const chatKind = $("#chatKind");
 const membersButton = $("#membersButton");
 const membersDrawer = $("#membersDrawer");
@@ -48,6 +49,16 @@ const groupPhotoInput = $("#groupPhotoInput");
 const groupUserSearchInput = $("#groupUserSearchInput");
 const groupUserResults = $("#groupUserResults");
 const selectedMembers = $("#selectedMembers");
+const replyPreview = $("#replyPreview");
+const recordingState = $("#recordingState");
+const groupSettingsDrawer = $("#groupSettingsDrawer");
+const groupSettingsForm = $("#groupSettingsForm");
+const closeGroupSettingsButton = $("#closeGroupSettingsButton");
+const groupSettingsNameInput = $("#groupSettingsNameInput");
+const groupSettingsPhotoInput = $("#groupSettingsPhotoInput");
+const groupSettingsPreview = $("#groupSettingsPreview");
+const groupSettingsMembers = $("#groupSettingsMembers");
+const saveGroupSettingsButton = $("#saveGroupSettingsButton");
 const passwordToggles = document.querySelectorAll("[data-password-toggle]");
 
 const TOKEN_KEY = "pulse-chat-token";
@@ -60,9 +71,15 @@ let conversations = [];
 let activeConversationId = "general";
 let messages = [];
 let selectedMessageId = "";
+let replyingTo = null;
 let selectedGroupUsers = [];
 let pendingProfilePhoto = "";
 let pendingGroupPhoto = "";
+let pendingGroupSettingsPhoto = "";
+let pendingVoice = null;
+let globalAudio = new Audio();
+let globalAudioSrc = "";
+let lastTappedMessage = { id: "", time: 0 };
 let stream = null;
 let mediaRecorder = null;
 let audioChunks = [];
@@ -92,6 +109,7 @@ photoInput.addEventListener("change", sendPhotoMessage);
 voiceButton.addEventListener("click", toggleVoiceRecording);
 mobileMenuButton.addEventListener("click", () => sidebar.classList.toggle("open"));
 membersButton.addEventListener("click", openMembers);
+chatTitleButton.addEventListener("click", openGroupSettings);
 closeMembersButton.addEventListener("click", () => membersDrawer.classList.add("hidden"));
 profileOpenButton.addEventListener("click", openProfile);
 closeProfileButton.addEventListener("click", closeProfile);
@@ -101,6 +119,13 @@ newGroupButton.addEventListener("click", openGroupCreator);
 closeGroupButton.addEventListener("click", closeGroupCreator);
 groupPhotoInput.addEventListener("change", loadGroupPhoto);
 groupForm.addEventListener("submit", createGroup);
+closeGroupSettingsButton.addEventListener("click", closeGroupSettings);
+groupSettingsPhotoInput.addEventListener("change", loadGroupSettingsPhoto);
+groupSettingsForm.addEventListener("submit", saveGroupSettings);
+globalAudio.addEventListener("ended", () => {
+  globalAudioSrc = "";
+  renderMessages(false);
+});
 friendSearchInput.addEventListener("input", debounce(searchFriends, 220));
 groupUserSearchInput.addEventListener("input", debounce(searchGroupUsers, 220));
 
@@ -193,6 +218,9 @@ async function selectConversation(id) {
   chatTitle.textContent = displayConversationName(active);
   chatKind.textContent = active?.type === "private" ? "Private chat" : "Group";
   membersButton.classList.toggle("hidden", active?.type !== "group");
+  chatTitleButton.disabled = active?.type !== "group" || active?.id === "general";
+  replyingTo = null;
+  renderReplyPreview();
   messages = await api(`/api/messages?conversationId=${encodeURIComponent(activeConversationId)}`);
   renderConversations();
   renderMessages();
@@ -258,8 +286,19 @@ function renderMessages(shouldScroll = true) {
     bubble.append(renderMessageBody(message));
     bubble.addEventListener("click", (event) => {
       event.stopPropagation();
+      const now = Date.now();
+      if (lastTappedMessage.id === message.id && now - lastTappedMessage.time < 320) {
+        startReply(message);
+        lastTappedMessage = { id: "", time: 0 };
+        return;
+      }
+      lastTappedMessage = { id: message.id, time: now };
       selectedMessageId = selectedMessageId === message.id ? "" : message.id;
       renderMessages(false);
+    });
+    bubble.addEventListener("dblclick", (event) => {
+      event.stopPropagation();
+      startReply(message);
     });
 
     const time = document.createElement("time");
@@ -280,6 +319,12 @@ function renderMessages(shouldScroll = true) {
 
 function renderMessageBody(message) {
   const fragment = document.createDocumentFragment();
+  if (message.replyTo) {
+    const reply = document.createElement("div");
+    reply.className = "reply-quote";
+    reply.textContent = `${message.replyTo.sender}: ${message.replyTo.text || message.replyTo.type}`;
+    fragment.append(reply);
+  }
   if (message.type === "photo") {
     const img = document.createElement("img");
     img.className = "chat-photo";
@@ -288,10 +333,7 @@ function renderMessageBody(message) {
     fragment.append(img);
   }
   if (message.type === "voice") {
-    const audio = document.createElement("audio");
-    audio.controls = true;
-    audio.src = message.dataUrl;
-    fragment.append(audio);
+    fragment.append(voiceBubble(message));
   }
   if (message.text) {
     const text = document.createElement("span");
@@ -339,6 +381,15 @@ function renderMessagePanel(message) {
   });
 
   panel.append(reactionPicker, infoBlock("Reacted by", reactionSummary(message.reactions || [])), infoBlock("Seen by", seenSummary(message.seenBy || [])));
+  const replyButton = document.createElement("button");
+  replyButton.className = "secondary-button reply-button";
+  replyButton.type = "button";
+  replyButton.textContent = "Reply";
+  replyButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    startReply(message);
+  });
+  panel.append(replyButton);
   return panel;
 }
 
@@ -355,6 +406,10 @@ function infoBlock(title, body) {
 }
 
 async function sendTextMessage() {
+  if (pendingVoice) {
+    await sendPendingVoice();
+    return;
+  }
   const text = messageInput.value.trim();
   if (!text) return;
   await sendMessage({ type: "text", text });
@@ -374,7 +429,16 @@ async function sendPhotoMessage() {
 
 async function sendMessage(payload) {
   try {
-    await api("/api/messages", { method: "POST", body: JSON.stringify({ conversationId: activeConversationId, ...payload }) });
+    await api("/api/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        conversationId: activeConversationId,
+        replyTo: replyingTo,
+        ...payload
+      })
+    });
+    replyingTo = null;
+    renderReplyPreview();
   } catch (error) {
     showToast(error.message || "Message failed.");
   }
@@ -394,13 +458,92 @@ async function toggleVoiceRecording() {
       voiceButton.classList.remove("recording");
       const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || "audio/webm" });
       const seconds = Math.max(1, Math.round((Date.now() - recordingStartedAt) / 1000));
-      await sendMessage({ type: "voice", text: `${seconds}s voice message`, dataUrl: await fileToDataUrl(blob), mimeType: blob.type, fileName: "voice-message.webm" });
+      pendingVoice = {
+        type: "voice",
+        text: `${seconds}s voice message`,
+        dataUrl: await fileToDataUrl(blob),
+        mimeType: blob.type,
+        fileName: "voice-message.webm"
+      };
+      renderRecordingState();
     });
     mediaRecorder.start();
     voiceButton.classList.add("recording");
+    pendingVoice = null;
+    renderRecordingState(true);
   } catch {
     showToast("Microphone access was not allowed.");
   }
+}
+
+async function sendPendingVoice() {
+  const voice = pendingVoice;
+  pendingVoice = null;
+  renderRecordingState();
+  await sendMessage(voice);
+}
+
+function renderRecordingState(isRecording = mediaRecorder?.state === "recording") {
+  const hasVoice = Boolean(pendingVoice);
+  messageInput.closest(".message-input-wrap").classList.toggle("hidden", isRecording || hasVoice);
+  recordingState.classList.toggle("hidden", !isRecording && !hasVoice);
+  recordingState.textContent = isRecording ? "Recording voice message..." : "Voice message ready. Tap send.";
+}
+
+function startReply(message) {
+  replyingTo = {
+    id: message.id,
+    sender: message.sender,
+    text: message.text || `${message.type} message`,
+    type: message.type
+  };
+  selectedMessageId = "";
+  renderReplyPreview();
+  renderMessages(false);
+  messageInput.focus();
+}
+
+function renderReplyPreview() {
+  replyPreview.classList.toggle("hidden", !replyingTo);
+  replyPreview.innerHTML = replyingTo
+    ? `<strong>Replying to ${escapeHtml(replyingTo.sender)}</strong><span>${escapeHtml(replyingTo.text)}</span><button type="button" aria-label="Cancel reply">x</button>`
+    : "";
+  replyPreview.querySelector("button")?.addEventListener("click", () => {
+    replyingTo = null;
+    renderReplyPreview();
+  });
+}
+
+function voiceBubble(message) {
+  const wrap = document.createElement("button");
+  wrap.className = "voice-bubble";
+  wrap.type = "button";
+  wrap.innerHTML = `
+    <span class="voice-avatar">${avatarMarkup(message.senderPhoto, message.sender)}</span>
+    <span class="voice-play">${globalAudioSrc === message.dataUrl && !globalAudio.paused ? "❚❚" : "▶"}</span>
+    <span class="voice-wave">${waveBars()}</span>
+    <span class="voice-duration">${escapeHtml(message.text.replace(" voice message", ""))}</span>
+  `;
+  wrap.addEventListener("click", (event) => {
+    event.stopPropagation();
+    playGlobalVoice(message.dataUrl);
+  });
+  return wrap;
+}
+
+function playGlobalVoice(src) {
+  if (globalAudioSrc !== src) {
+    globalAudioSrc = src;
+    globalAudio.src = src;
+    globalAudio.load();
+  }
+  if (globalAudio.paused) globalAudio.play();
+  else globalAudio.pause();
+  renderMessages(false);
+}
+
+function waveBars() {
+  return Array.from({ length: 24 }, (_, index) => `<i style="height:${8 + (index % 5) * 4}px"></i>`).join("");
 }
 
 async function searchFriends() {
@@ -459,6 +602,74 @@ function openMembers() {
     memberList.append(button);
   });
   membersDrawer.classList.remove("hidden");
+}
+
+function openGroupSettings() {
+  const active = activeConversation();
+  if (!active || active.type !== "group" || active.id === "general") return;
+  const isAdmin = active.createdBy === currentUser.id;
+  pendingGroupSettingsPhoto = active.photo || "";
+  groupSettingsNameInput.value = active.name;
+  groupSettingsNameInput.disabled = !isAdmin;
+  groupSettingsPhotoInput.disabled = !isAdmin;
+  saveGroupSettingsButton.classList.toggle("hidden", !isAdmin);
+  renderGroupSettingsPreview();
+  renderGroupSettingsMembers();
+  groupSettingsDrawer.classList.remove("hidden");
+}
+
+function closeGroupSettings(event) {
+  event?.preventDefault();
+  groupSettingsDrawer.classList.add("hidden");
+}
+
+async function loadGroupSettingsPhoto() {
+  const file = groupSettingsPhotoInput.files?.[0];
+  if (file) pendingGroupSettingsPhoto = await fileToDataUrl(file);
+  renderGroupSettingsPreview();
+}
+
+function renderGroupSettingsPreview() {
+  groupSettingsPreview.innerHTML = avatarMarkup(pendingGroupSettingsPhoto, groupSettingsNameInput.value || "Group");
+}
+
+function renderGroupSettingsMembers() {
+  const active = activeConversation();
+  const isAdmin = active?.createdBy === currentUser.id;
+  groupSettingsMembers.innerHTML = "";
+  (active?.members || []).forEach((member) => {
+    const row = document.createElement("div");
+    row.className = "member-admin-row";
+    row.innerHTML = `${avatarMarkup(member.photo, member.username)}<span><strong>${escapeHtml(member.username)}</strong><small>${member.id === active.createdBy ? "Admin" : escapeHtml(member.phone)}</small></span>`;
+    if (isAdmin && member.id !== currentUser.id) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "Remove";
+      remove.addEventListener("click", () => removeGroupMember(member.id));
+      row.append(remove);
+    }
+    groupSettingsMembers.append(row);
+  });
+}
+
+async function saveGroupSettings(event) {
+  event.preventDefault();
+  const active = activeConversation();
+  const updated = await api(`/api/conversations/${active.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name: groupSettingsNameInput.value, photo: pendingGroupSettingsPhoto })
+  });
+  await loadConversations();
+  activeConversationId = updated.id;
+  chatTitle.textContent = displayConversationName(activeConversation());
+  closeGroupSettings();
+}
+
+async function removeGroupMember(memberId) {
+  const active = activeConversation();
+  await api(`/api/conversations/${active.id}/members/${memberId}`, { method: "DELETE" });
+  await loadConversations();
+  renderGroupSettingsMembers();
 }
 
 function openProfile() {
@@ -685,6 +896,13 @@ function escapeHtml(value) {
 
 function formatTime(timestamp) {
   return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(timestamp);
+}
+
+function formatDuration(seconds) {
+  const rounded = Math.floor(seconds || 0);
+  const mins = Math.floor(rounded / 60);
+  const secs = String(rounded % 60).padStart(2, "0");
+  return `${mins}:${secs}`;
 }
 
 function debounce(callback, wait) {
